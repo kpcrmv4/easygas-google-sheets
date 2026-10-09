@@ -1,0 +1,256 @@
+<!doctype html>
+<html lang="th">
+<head>
+<script data-egs-run-shim>
+(function () {
+  var EXEC_URL = "https://script.google.com/macros/s/AKfycbxVrbM35un_OvGf2lTjk3ryRgaAEUm0CSfNeq4xgWOH1g-f93Ts8fqcNwkOBJoExppc/exec";
+  var MSG_NETWORK = '\u0e40\u0e0a\u0e37\u0e48\u0e2d\u0e21\u0e15\u0e48\u0e2d\u0e23\u0e30\u0e1a\u0e1a\u0e2b\u0e25\u0e31\u0e07\u0e1a\u0e49\u0e32\u0e19\u0e44\u0e21\u0e48\u0e44\u0e14\u0e49 \u0e01\u0e23\u0e38\u0e13\u0e32\u0e15\u0e23\u0e27\u0e08\u0e2d\u0e34\u0e19\u0e40\u0e17\u0e2d\u0e23\u0e4c\u0e40\u0e19\u0e47\u0e15\u0e41\u0e25\u0e49\u0e27\u0e25\u0e2d\u0e07\u0e43\u0e2b\u0e21\u0e48';
+  var MSG_BAD_ANSWER = '\u0e23\u0e30\u0e1a\u0e1a\u0e2b\u0e25\u0e31\u0e07\u0e1a\u0e49\u0e32\u0e19\u0e15\u0e2d\u0e1a\u0e01\u0e25\u0e31\u0e1a\u0e1c\u0e34\u0e14\u0e23\u0e39\u0e1b\u0e41\u0e1a\u0e1a \u0e01\u0e23\u0e38\u0e13\u0e32\u0e25\u0e2d\u0e07\u0e43\u0e2b\u0e21\u0e48\u0e2d\u0e35\u0e01\u0e04\u0e23\u0e31\u0e49\u0e07';
+  var MSG_FILE = '\u0e2b\u0e19\u0e49\u0e32\u0e19\u0e35\u0e49\u0e22\u0e31\u0e07\u0e2a\u0e48\u0e07\u0e44\u0e1f\u0e25\u0e4c\u0e41\u0e19\u0e1a\u0e08\u0e32\u0e01\u0e1f\u0e2d\u0e23\u0e4c\u0e21\u0e44\u0e21\u0e48\u0e44\u0e14\u0e49 \u0e01\u0e23\u0e38\u0e13\u0e32\u0e15\u0e31\u0e14\u0e0a\u0e48\u0e2d\u0e07\u0e41\u0e19\u0e1a\u0e44\u0e1f\u0e25\u0e4c\u0e2d\u0e2d\u0e01';
+  var MSG_ARGS = '\u0e02\u0e49\u0e2d\u0e21\u0e39\u0e25\u0e17\u0e35\u0e48\u0e2a\u0e48\u0e07\u0e44\u0e1b\u0e15\u0e49\u0e2d\u0e07\u0e40\u0e1b\u0e47\u0e19\u0e04\u0e48\u0e32\u0e17\u0e35\u0e48\u0e41\u0e1b\u0e25\u0e07\u0e40\u0e1b\u0e47\u0e19 JSON \u0e44\u0e14\u0e49';
+
+  function toError(name, message, cause) {
+    var err = new Error(message);
+    if (name) err.name = name;
+    if (cause !== undefined) err.cause = cause;
+    return err;
+  }
+
+  function addField(out, name, value) {
+    if (!(name in out)) { out[name] = value; return; }
+    if (!Array.isArray(out[name])) out[name] = [out[name]];
+    out[name].push(value);
+  }
+
+  function formToObject(form) {
+    var out = {};
+    var els = form.elements || [];
+    for (var i = 0; i < els.length; i++) {
+      var el = els[i];
+      var type = String(el.type || '').toLowerCase();
+      if (!el.name || el.disabled) continue;
+      if (type === 'file') {
+        if (el.files && el.files.length) throw toError('EgsFormError', MSG_FILE);
+        continue;
+      }
+      if (type === 'submit' || type === 'button' || type === 'reset' || type === 'image' || type === 'fieldset') continue;
+      if ((type === 'checkbox' || type === 'radio') && !el.checked) continue;
+      if (type === 'select-multiple') {
+        var opts = el.options || [];
+        for (var j = 0; j < opts.length; j++) if (opts[j].selected) addField(out, el.name, opts[j].value);
+        continue;
+      }
+      addField(out, el.name, el.value);
+    }
+    return out;
+  }
+
+  function isForm(v) {
+    return !!v && typeof v === 'object' && String(v.tagName || '').toUpperCase() === 'FORM';
+  }
+
+  function prepareArgs(args) {
+    if (args.length === 1 && isForm(args[0])) return [formToObject(args[0])];
+    return args;
+  }
+
+  function parseAnswer(text) {
+    var data;
+    try { data = JSON.parse(text); } catch (e) { throw toError('EgsRemoteError', MSG_BAD_ANSWER, e); }
+    if (!data || typeof data !== 'object' || typeof data.ok !== 'boolean') throw toError('EgsRemoteError', MSG_BAD_ANSWER);
+    return data;
+  }
+
+  function settle(state, value, err) {
+    if (err) {
+      if (state.fail) state.fail(err, state.user);
+      else console.error('google.script.run.' + state.fn + ' failed:', err);
+      return;
+    }
+    if (state.ok) state.ok(value, state.user);
+  }
+
+  function send(state, args) {
+    var body;
+    try {
+      body = JSON.stringify({ fn: state.fn, args: prepareArgs(args) });
+    } catch (e) {
+      var err = e && e.name === 'EgsFormError' ? e : toError('EgsArgsError', MSG_ARGS, e);
+      Promise.resolve().then(function () { settle(state, undefined, err); });
+      return;
+    }
+    fetch(EXEC_URL, { method: 'POST', body: body, redirect: 'follow' })
+      .then(function (res) { return res.text(); }, function (e) { throw toError('EgsNetworkError', MSG_NETWORK, e); })
+      .then(parseAnswer)
+      .then(function (data) { return { data: data }; }, function (e) { return { err: e }; })
+      .then(function (r) {
+        if (r.err) return settle(state, undefined, r.err);
+        if (r.data.ok) return settle(state, r.data.value, null);
+        var e = r.data.error || {};
+        settle(state, undefined, toError(e.name ? String(e.name) : 'Error', e.message !== undefined ? String(e.message) : 'Error'));
+      });
+  }
+
+  var SKIP = { then: 1, toJSON: 1, constructor: 1, valueOf: 1, toString: 1, inspect: 1 };
+
+  function makeRunner(state) {
+    return new Proxy({}, {
+      get: function (_, prop) {
+        if (typeof prop !== 'string' || SKIP[prop]) return undefined;
+        if (prop === 'withSuccessHandler') return function (h) { return makeRunner({ ok: h, fail: state.fail, user: state.user }); };
+        if (prop === 'withFailureHandler') return function (h) { return makeRunner({ ok: state.ok, fail: h, user: state.user }); };
+        if (prop === 'withUserObject') return function (u) { return makeRunner({ ok: state.ok, fail: state.fail, user: u }); };
+        return function () {
+          send({ ok: state.ok, fail: state.fail, user: state.user, fn: prop }, Array.prototype.slice.call(arguments));
+        };
+      }
+    });
+  }
+
+  function currentLocation() {
+    var params = new URLSearchParams(window.location.search);
+    var parameter = {}, parameters = {};
+    params.forEach(function (value, key) {
+      if (!(key in parameter)) parameter[key] = value;
+      (parameters[key] = parameters[key] || []).push(value);
+    });
+    return { hash: window.location.hash.replace(/^#/, ''), parameter: parameter, parameters: parameters };
+  }
+
+  function buildUrl(params, hash) {
+    var search = window.location.search;
+    if (params && typeof params === 'object') {
+      var q = new URLSearchParams();
+      Object.keys(params).forEach(function (k) {
+        var v = params[k];
+        if (Array.isArray(v)) v.forEach(function (x) { q.append(k, String(x)); });
+        else if (v !== undefined && v !== null) q.append(k, String(v));
+      });
+      var s = q.toString();
+      search = s ? '?' + s : '';
+    }
+    var h = hash === undefined || hash === null ? window.location.hash : (hash ? '#' + String(hash).replace(/^#/, '') : '');
+    return window.location.pathname + search + h;
+  }
+
+  var changeHandler = null;
+  window.addEventListener('popstate', function (ev) {
+    if (changeHandler) changeHandler({ state: ev.state, location: currentLocation() });
+  });
+
+  var noop = function () {};
+  window.google = {
+    script: {
+      run: makeRunner({ ok: null, fail: null, user: undefined }),
+      host: { close: noop, setHeight: noop, setWidth: noop, editor: { focus: noop }, origin: window.location.origin },
+      url: { getLocation: function (cb) { if (cb) cb(currentLocation()); } },
+      history: {
+        push: function (state, params, hash) { window.history.pushState(state === undefined ? null : state, '', buildUrl(params, hash)); },
+        replace: function (state, params, hash) { window.history.replaceState(state === undefined ? null : state, '', buildUrl(params, hash)); },
+        setChangeHandler: function (fn) { changeHandler = typeof fn === 'function' ? fn : null; }
+      }
+    }
+  };
+})();
+</script>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>สมุดเยี่ยม</title>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Thai:wght@400;600;700&display=swap">
+  <style>
+    :root { --ink: #1b2432; --muted: #5b6472; --line: #e2e8e4; --green: #16a34a; --green-deep: #15803d; --paper: #f3f7f4; }
+    * { box-sizing: border-box; }
+    body { margin: 0; font-family: 'IBM Plex Sans Thai', 'Noto Sans Thai', system-ui, sans-serif; color: var(--ink); background: var(--paper); }
+    .wrap { max-width: 640px; margin: 0 auto; padding: 24px 16px 48px; }
+    header { display: flex; align-items: center; gap: 12px; margin-bottom: 18px; }
+    .logo { width: 40px; height: 40px; border-radius: 12px; background: var(--green); color: #fff; display: grid; place-items: center; font-weight: 700; }
+    h1 { font-size: 24px; margin: 0; }
+    .sub { margin: 2px 0 0; color: var(--muted); font-size: 14px; }
+    .card { background: #fff; border: 1px solid var(--line); border-radius: 16px; padding: 18px; }
+    label { display: block; font-size: 14px; font-weight: 600; margin: 10px 0 6px; }
+    input, textarea { width: 100%; font: inherit; font-size: 16px; padding: 10px 12px; border: 1.5px solid #c4cfc8; border-radius: 10px; background: #fff; }
+    textarea { min-height: 96px; resize: vertical; }
+    button { margin-top: 14px; width: 100%; min-height: 46px; border: 0; border-radius: 12px; background: var(--green); color: #fff; font: inherit; font-size: 16px; font-weight: 700; cursor: pointer; }
+    button:disabled { opacity: .6; cursor: wait; }
+    .msg { margin-top: 10px; font-size: 14px; min-height: 20px; }
+    .msg.err { color: #b91c1c; }
+    .msg.ok { color: var(--green-deep); }
+    h2 { font-size: 16px; margin: 24px 0 10px; color: var(--muted); font-weight: 600; }
+    .entry { background: #fff; border: 1px solid var(--line); border-radius: 14px; padding: 12px 14px; margin-bottom: 10px; }
+    .entry .who { display: flex; justify-content: space-between; gap: 8px; font-size: 13px; color: var(--muted); }
+    .entry .who b { color: var(--ink); }
+    .entry p { margin: 6px 0 0; white-space: pre-wrap; line-height: 1.6; }
+    .empty { color: var(--muted); font-size: 14px; text-align: center; padding: 18px; }
+    footer { margin-top: 28px; text-align: center; font-size: 12px; color: var(--muted); }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <header>
+      <div class="logo">✎</div>
+      <div>
+        <h1>สมุดเยี่ยม</h1>
+        <p class="sub">ลงชื่อ ฝากข้อความไว้ บันทึกลง Google Sheets ของเจ้าของแอป</p>
+      </div>
+    </header>
+
+    <form class="card" id="form">
+      <label for="name">ชื่อของคุณ</label>
+      <input id="name" name="name" maxlength="60" placeholder="เช่น สมชาย" required>
+      <label for="message">ข้อความ</label>
+      <textarea id="message" name="message" maxlength="500" placeholder="อยากบอกอะไรกับเจ้าของแอป…" required></textarea>
+      <button type="submit" id="submit">ฝากข้อความ</button>
+      <div class="msg" id="msg" role="status"></div>
+    </form>
+
+    <h2>ข้อความล่าสุด</h2>
+    <div id="list"><div class="empty">กำลังโหลด…</div></div>
+
+    <footer>สร้างด้วย EasyGAS IDE · ข้อมูลอยู่ใน Google Sheets ของเจ้าของแอป</footer>
+  </div>
+
+  <script>
+    var form = document.getElementById('form');
+    var msg = document.getElementById('msg');
+    var list = document.getElementById('list');
+    var submit = document.getElementById('submit');
+
+    function esc(s) { return String(s).replace(/[&<>"']/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); }
+
+    function render(entries) {
+      if (!entries || !entries.length) { list.innerHTML = '<div class="empty">ยังไม่มีข้อความ เป็นคนแรกได้เลย</div>'; return; }
+      list.innerHTML = entries.map(function (e) {
+        return '<div class="entry"><div class="who"><b>' + esc(e.name) + '</b><span>' + esc(e.time) + '</span></div><p>' + esc(e.message) + '</p></div>';
+      }).join('');
+    }
+
+    function say(text, kind) { msg.textContent = text || ''; msg.className = 'msg' + (kind ? ' ' + kind : ''); }
+
+    function load() {
+      google.script.run
+        .withSuccessHandler(render)
+        .withFailureHandler(function () { list.innerHTML = '<div class="empty">โหลดข้อความไม่สำเร็จ ลองรีเฟรช</div>'; })
+        .listEntries();
+    }
+
+    form.addEventListener('submit', function (ev) {
+      ev.preventDefault();
+      var payload = { name: form.name.value, message: form.message.value };
+      submit.disabled = true;
+      say('กำลังบันทึก…');
+      google.script.run
+        .withSuccessHandler(function (r) {
+          submit.disabled = false;
+          if (!r || !r.ok) { say((r && r.error) || 'บันทึกไม่สำเร็จ', 'err'); return; }
+          form.message.value = '';
+          say('บันทึกแล้ว ขอบคุณครับ', 'ok');
+          render(r.entries);
+        })
+        .withFailureHandler(function (e) { submit.disabled = false; say('บันทึกไม่สำเร็จ: ' + (e && e.message ? e.message : 'ลองใหม่อีกครั้ง'), 'err'); })
+        .addEntry(payload);
+    });
+
+    load();
+  </script>
+</body>
+</html>
